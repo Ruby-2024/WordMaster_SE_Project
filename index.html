@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="zh-CN" class="h-full" x-data="vocabApp" x-init="init()" :class="theme">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vocab Lite</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          typography: {
+            DEFAULT: {
+              css: {
+                maxWidth: 'none',
+                color: 'inherit',
+                a: {
+                  color: '#0ea5e9',
+                  '&:hover': {
+                    color: '#0369a1'
+                  }
+                },
+                // 确保代码块样式正确
+                pre: {
+                  backgroundColor: '#1e293b',
+                  color: '#e2e8f0'
+                },
+                code: {
+                  color: '#e2e8f0',
+                  backgroundColor: '#1e293b',
+                  paddingLeft: '4px',
+                  paddingRight: '4px',
+                  paddingTop: '2px',
+                  paddingBottom: '2px',
+                  borderRadius: '0.375rem'
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 添加全局按钮和输入框基础样式
+    const baseStyle = "px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors";
+    const inputStyle = "rounded-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:border-sky-500 dark:focus:border-sky-500 focus:ring-1 focus:ring-sky-500";
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- marked.js -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0ea5e9"/>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='24' fill='%230ea5e9'/%3E%3Ctext x='64' y='82' text-anchor='middle' font-size='72' fill='white' font-family='Arial'%3EV%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="h-full bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+  <!-- 顶部导航 -->
+  <header class="sticky top-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-2">
+      <span class="font-bold text-sky-600">Vocab Lite</span>
+      <!-- 修改导航栏部分 -->
+      <nav class="ml-4 flex gap-2 text-sm">
+        <button class="px-3 py-1.5 transition-colors"
+          :class="tab==='home' && 'bg-sky-600 hover:bg-sky-700 text-white dark:bg-sky-600 dark:hover:bg-sky-700'"
+          @click="tab='home'">首页</button>
+        <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
+          :class="tab==='study' && 'text-sky-600'" 
+          @click="tab='study'">学习</button>
+        <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
+          :class="tab==='decks' && 'text-sky-600'" 
+          @click="tab='decks'">词表</button>
+        <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
+          :class="tab==='goals' && 'text-sky-600'" 
+          @click="tab='goals'">目标</button>
+        <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
+          :class="tab==='review' && 'text-sky-600'" 
+          @click="tab='review'">复习</button>
+        <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
+          :class="tab==='settings' && 'text-sky-600'" 
+          @click="tab='settings'">设置</button>
+      </nav>
+      <div class="ml-auto text-xs opacity-70">今日：新词 <span x-text="statsToday.learned"></span> / 复习 <span x-text="statsToday.reviewed"></span></div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6 space-y-8">
+
+    <!-- 首页：说明 -->
+    <section x-show="tab==='home'" x-cloak class="space-y-4">
+      <h2 class="text-2xl font-semibold">欢迎使用 Vocab Lite</h2>
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3 leading-relaxed">
+        <p>这是一个<strong>零打包、纯静态</strong>的背单词 App：Alpine.js + Tailwind CDN，数据存浏览器 LocalStorage，支持 PWA 离线。</p>
+        <ol class="list-decimal pl-5 space-y-2">
+          <li><strong>先在「词表」</strong>勾选内置词表，或导入本地 JSON/CSV（格式 <code>[{word, meaning, example?}]</code>）。</li>
+          <li><strong>到「目标」</strong>设置每日新词数与新/复习比例。</li>
+          <li><strong>在「学习」或「复习」</strong>里任选「记忆/拼写」两种模式学习；两页都可切换。</li>
+          <li><strong>右下角「AI」</strong>可获得解释与例句。在「设置 → AI 参数」里可填你的自有 Key（可选）。</li>
+        </ol>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn-primary" @click="tab='decks'">去选择词表</button>
+        <button class="btn" @click="tab='settings'">去配置 AI</button>
+      </div>
+    </section>
+
+    <!-- 学习页：支持 记忆/拼写 两模式 -->
+    <section x-show="tab==='study'" x-cloak class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold">学习</h2>
+        <div class="flex items-center gap-2">
+          <label class="text-sm opacity-70">模式：</label>
+          <select class="px-4 py-2 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-sky-500 dark:focus:border-sky-500"
+            x-model="modeStudy" @change="onSwitchStudyMode()">
+            <option value="memory">记忆</option>
+            <option value="spelling">拼写</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 记忆模式 UI -->
+      <template x-if="modeStudy==='memory' && currentCard">
+        <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70"
+          @keyup.enter="handleMemoryEnter()"
+          tabindex="0"
+          x-effect="$nextTick(() => $el.focus())">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-3xl font-bold" x-text="showMeaning ? currentCard.meaning : '🔒 先回忆释义，按 Enter 显示'"></div>
+              <div class="mt-2 text-slate-500 dark:text-slate-400" x-show="showMeaning">例句：<span x-text="currentCard.example || '（无）'"></span></div>
+            </div>
+            <div class="text-2xl font-extrabold text-sky-600 select-all" x-text="currentCard.word"></div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap gap-2">
+            <template x-if="!showMeaning">
+              <div class="flex flex-wrap gap-2">
+                <template x-for="(label, n) in {
+                  1: '没有印象',
+                  2: '似乎认识',
+                  3: '记得部分',
+                  4: '比较熟悉',
+                  5: '非常熟悉'
+                }" :key="n">
+                  <button @click="grade(n)"
+                    class="px-3 py-2 rounded-full border hover:border-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/30"
+                    :class="currentGradeUI === n ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/30' : ''">
+                    <span x-text="label"></span>
+                  </button>
+                </template>
+              </div>
+            </template>
+            <button class="ml-auto px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+              @click="handleMemoryEnter()">
+              Enter：<span x-text="showMeaning ? '下一题' : '显示释义'"></span>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- 拼写模式 UI（学习队列：先显示单词 → 开始拼写后隐藏） -->
+      <template x-if="modeStudy==='spelling' && currentCard">
+        <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3">
+          <!-- 阶段一：展示单词 -->
+          <div x-show="spellingStudyStage==='show'" 
+            @keyup.enter="startSpellingStudy()" 
+            tabindex="0"
+            x-effect="if(spellingStudyStage==='show') { $nextTick(() => $el.focus()); }">
+            <div class="text-sm opacity-70 mb-1">先观察单词，确认后进入拼写（将隐藏单词）。</div>
+            <div class="text-3xl font-extrabold text-sky-600 select-all" x-text="currentCard.word"></div>
+            <div class="flex gap-2 mt-3">
+              <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors" 
+                @click="startSpellingStudy()">开始拼写 (Enter)</button>
+              <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors" 
+                @click="nextCard()">跳过</button>
+            </div>
+          </div>
+
+          <!-- 阶段二：输入拼写（单词已隐藏） -->
+          <div x-show="spellingStudyStage==='input' || spellingStudyStage==='correct'">
+            <div class="text-sm opacity-70 mb-1">单词已隐藏，请输入拼写：</div>
+            <input type="text" 
+              class="input w-full text-lg py-3 mb-2 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-sky-500 dark:focus:border-sky-500 focus:ring-1 focus:ring-sky-500" 
+              placeholder="请输入英文单词，Enter 提交" 
+              x-model="spellingStudyInput"
+              @keyup.enter="checkSpellingStudy()"
+              :disabled="spellingStudyStage==='correct'">
+            <div class="flex gap-2 mt-2">
+              <template x-if="spellingStudyStage==='correct'">
+                <div @keyup.enter="nextCard()" 
+                  tabindex="0" 
+                  x-effect="$nextTick(() => $el.focus())">
+                  <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                    @click="nextCard()">下一个 (Enter)</button>
+                </div>
+              </template>
+              <template x-if="spellingStudyStage==='input'">
+                <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                  @click="checkSpellingStudy()">提交（Enter）</button>
+              </template>
+              <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                @click="nextCard()">跳过</button>
+              <div class="ml-auto text-sm opacity-70">容错：Levenshtein ≤ 20%</div>
+            </div>
+            <div x-show="spellingStudyFeedback" x-text="spellingStudyFeedback" class="text-sm mt-1"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="!currentCard">
+        <div class="space-y-4">
+          <div class="text-slate-500 dark:text-slate-400">没有可学习的卡片。请在「词表」勾选词表并在「目标」设置每日新词数，或前往「复习」查看到期卡。</div>
+          <!-- 添加再学一组按钮 -->
+          <button 
+            @click="studyOneMoreSet()" 
+            class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors">
+            再学一组 (按当前目标)
+          </button>
+        </div>
+      </template>
+    </section>
+
+    <!-- 词表页 -->
+    <section x-show="tab==='decks'" x-cloak class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold">词表</h2>
+        <div class="text-sm opacity-70">可多选启用，按 word 去重合并</div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <template x-for="d in decks" :key="d.id">
+          <label class="flex items-center gap-3 rounded-xl border p-3 bg-white/70 dark:bg-slate-800/70 cursor-pointer">
+            <input type="checkbox" class="size-4" :checked="d.enabled" @change="toggleDeck(d.id, $event.target.checked)">
+            <div class="flex-1">
+              <div class="font-semibold" x-text="d.title"></div>
+              <div class="text-xs opacity-70">词数 <span x-text="d.size"></span> · 进度 <span x-text="progressOfDeck(d)"></span>%</div>
+            </div>
+          </label>
+        </template>
+      </div>
+
+      <div class="rounded-xl border p-4 space-y-3 bg-white/70 dark:bg-slate-800/70">
+        <div class="font-semibold">导入本地词表</div>
+        <div class="text-xs opacity-70">支持 JSON：[{word, meaning, example?}] 或 CSV：word,meaning,example</div>
+        <input type="file" 
+          class="block w-full px-4 py-2 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          accept=".json,.csv" @change="importWordlist($event)">
+      </div>
+    </section>
+
+    <!-- 修改目标页面的输入框和按钮 -->
+    <section x-show="tab==='goals'" x-cloak class="space-y-4">
+      <h2 class="text-xl font-semibold">每日目标</h2>
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 grid gap-4 md:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span>每日新词数</span>
+          <input type="number" min="1" 
+            class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500 focus:ring-1 focus:ring-sky-500" 
+            x-model.number="settings.daily.newPerDay">
+        </label>
+        <label class="flex flex-col gap-1">
+          <span>新/复习比例（0~1）</span>
+          <input type="number" step="0.05" min="0" max="1" 
+            class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500 focus:ring-1 focus:ring-sky-500" 
+            x-model.number="settings.daily.ratio">
+        </label>
+        <button class="px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white transition-colors md:col-span-2" 
+          @click="saveSettings()">保存</button>
+      </div>
+    </section>
+
+    <!-- 复习页：支持 记忆/拼写 两模式 -->
+    <section x-show="tab==='review'" x-cloak class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold">复习</h2>
+        <div class="flex items-center gap-2">
+          <label class="text-sm opacity-70">模式：</label>
+          <select class="px-4 py-2 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-sky-500 dark:focus:border-sky-500"
+            x-model="modeReview" @change="onSwitchReviewMode()">
+            <option value="memory">记忆</option>
+            <option value="spelling">拼写</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 复习记忆模式 UI -->
+      <template x-if="modeReview==='memory' && reviewCard">
+        <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70"
+          @keyup.enter="handleReviewMemoryEnter()"
+          tabindex="0"
+          x-effect="$nextTick(() => $el.focus())">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-3xl font-bold" x-text="showReviewMeaning ? reviewCard.meaning : '🔒 先回忆释义，按 Enter 显示'"></div>
+              <div class="mt-2 text-slate-500 dark:text-slate-400" x-show="showReviewMeaning">例句：<span x-text="reviewCard.example || '（无）'"></span></div>
+            </div>
+            <div class="text-2xl font-extrabold text-sky-600 select-all" x-text="reviewCard.word"></div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap gap-2">
+            <template x-if="!showReviewMeaning">
+              <div class="flex flex-wrap gap-2">
+                <template x-for="(label, n) in {
+                  1: '没有印象',
+                  2: '似乎认识',
+                  3: '记得部分',
+                  4: '比较熟悉',
+                  5: '非常熟悉'
+                }" :key="n">
+                  <button @click="gradeReview(n)"
+                    class="px-3 py-2 rounded-full border hover:border-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/30"
+                    :class="currentGradeUI === n ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/30' : ''">
+                    <span x-text="label"></span>
+                  </button>
+                </template>
+              </div>
+            </template>
+            <button class="ml-auto px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+              @click="handleReviewMemoryEnter()">
+              Enter：<span x-text="showReviewMeaning ? '下一题' : '显示释义'"></span>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- 复习拼写模式 UI -->
+      <template x-if="modeReview==='spelling' && reviewCard">
+        <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3">
+          <div x-show="spellingStage==='show'"
+            @keyup.enter="startSpelling()"
+            tabindex="0"
+            x-effect="if(spellingStage==='show') { $nextTick(() => $el.focus()); }">
+            <div class="text-sm opacity-70 mb-1">先观察单词，确认后进入拼写（将隐藏单词）。</div>
+            <div class="text-3xl font-extrabold text-sky-600 select-all" x-text="reviewCard.word"></div>
+            <div class="flex gap-2 mt-3">
+              <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                @click="startSpelling()">开始拼写 (Enter)</button>
+              <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                @click="nextReview()">跳过</button>
+            </div>
+          </div>
+
+          <div x-show="spellingStage==='input' || spellingStage==='correct'">
+            <div class="text-sm opacity-70 mb-1">单词已隐藏，请输入拼写：</div>
+            <input type="text" 
+              class="input w-full text-lg py-3 mb-2"
+              placeholder="请输入英文单词，Enter 提交"
+              x-model="spellingInput"
+              @keyup.enter="checkSpelling()"
+              :disabled="spellingStage==='correct'">
+            <div class="flex gap-2 mt-2">
+              <template x-if="spellingStage==='correct'">
+                <div @keyup.enter="nextReview()"
+                  tabindex="0"
+                  x-effect="$nextTick(() => $el.focus())">
+                  <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                    @click="nextReview()">下一个 (Enter)</button>
+                </div>
+              </template>
+              <template x-if="spellingStage==='input'">
+                <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                  @click="checkSpelling()">提交（Enter）</button>
+              </template>
+              <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+                @click="nextReview()">跳过</button>
+              <div class="ml-auto text-sm opacity-70">容错：Levenshtein ≤ 20%</div>
+            </div>
+            <div x-show="spellingFeedback" x-text="spellingFeedback" class="text-sm mt-1"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="!reviewCard">
+        <div class="text-slate-500 dark:text-slate-400">没有需要复习的卡片。</div>
+      </template>
+    </section>
+
+    <!-- 设置页（保持不变） -->
+    <section x-show="tab==='settings'" x-cloak class="space-y-6">
+      <h2 class="text-xl font-semibold">设置</h2>
+
+      <!-- 学习偏好 -->
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 grid gap-4 md:grid-cols-3">
+        <div class="font-semibold md:col-span-3">学习偏好</div>
+        <label class="flex items-center gap-2">
+          <span>默认进入：</span>
+          <select class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            x-model="settings.study.defaultTab">
+            <option value="study">学习</option>
+            <option value="review">复习</option>
+            <option value="home">首页</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2">
+          <span>学习页默认模式：</span>
+          <select class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            x-model="settings.study.defaultStudyMode">
+            <option value="memory">记忆</option>
+            <option value="spelling">拼写</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2">
+          <span>复习页默认模式：</span>
+          <select class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            x-model="settings.study.defaultReviewMode">
+            <option value="memory">记忆</option>
+            <option value="spelling">拼写</option>
+          </select>
+        </label>
+        <button class="px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white transition-colors md:col-span-3" 
+          @click="saveSettings()">保存偏好</button>
+      </div>
+
+      <!-- AI 参数 -->
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 grid gap-4 md:grid-cols-2">
+        <div class="font-semibold md:col-span-2">AI 参数（支持自有 Key；默认 Key 在服务端 Worker 中硬编码）</div>
+        <label class="flex flex-col gap-1 md:col-span-2">
+          <span>代理地址 AI_BASE（应以 /api/chat 结尾）</span>
+          <input class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            placeholder="https://xxx.workers.dev/api/chat" 
+            x-model="settings.ai.base">
+        </label>
+
+        <label class="flex flex-col gap-1">
+          <span>model</span>
+          <input class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            x-model="settings.ai.model">
+        </label>
+        <label class="flex flex-col gap-1">
+          <span>temperature</span>
+          <input class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            type="number" 
+            step="0.1" 
+            x-model.number="settings.ai.temperature">
+        </label>
+        <label class="flex flex-col gap-1">
+          <span>max_tokens</span>
+          <input class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            type="number" 
+            x-model.number="settings.ai.max_tokens">
+        </label>
+        
+        <label class="flex flex-col gap-1 md:col-span-2">
+          <span>system 指令</span>
+          <textarea class="px-4 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 focus:border-sky-500 dark:focus:border-sky-500" 
+            rows="3" 
+            x-model="settings.ai.system"></textarea>
+        </label>
+
+        <button class="px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white transition-colors md:col-span-2" 
+          @click="saveSettings()">保存 AI 设置</button>
+      </div>
+
+      <!-- 数据 -->
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 grid gap-3">
+        <div class="font-semibold">数据</div>
+        <div class="flex gap-2">
+          <button class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors" 
+            @click="exportAll()">导出 LocalStorage JSON</button>
+          <label class="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors cursor-pointer">
+            导入 JSON
+            <input type="file" class="hidden" accept=".json" @change="importAll($event)">
+          </label>
+          <button class="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors ml-auto" 
+            @click="clearAll()">清空所有数据</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 悬浮 AI 小窗按钮 -->
+  <button @click="openAI()" class="fixed right-4 bottom-4 rounded-full p-3 shadow-lg bg-sky-600 text-white hover:bg-sky-700">
+    ✨ AI
+  </button>
+
+  <!-- AI 弹窗 -->
+  <dialog x-ref="aidlg" class="rounded-2xl w-[min(720px,95vw)] backdrop:bg-black/30">
+    <form method="dialog">
+      <!-- 修改关闭按钮 -->
+      <div class="p-4 border-b flex items-center gap-3">
+        <div class="text-lg font-semibold">AI 助手</div>
+        <div class="text-xs opacity-70">代理：<span x-text="settings.ai.base || '未配置'"></span></div>
+        <button class="ml-auto px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors" value="close">关闭</button>
+      </div>
+    </form>
+    <div class="p-4 space-y-3 max-h-[70vh] overflow-auto">
+      <div class="text-xs opacity-70">会自动带入当前单词与释义，可追加问题。支持 Markdown 格式。</div>
+      <div class="space-y-2">
+        <template x-for="m in aiState.messages" :key="m.id">
+          <div :class="m.role==='user' ? 'text-right' : 'text-left'">
+            <div class="inline-block whitespace-pre-wrap rounded-xl px-3 py-2 prose prose-sm dark:prose-invert max-w-none"
+              :class="m.role==='user' ? 'bg-sky-600 text-white' : 'bg-slate-100 dark:bg-slate-800'"
+              x-html="m.role==='assistant' ? marked.parse(m.content) : m.content">
+            </div>
+          </div>
+        </template>
+        
+        <!-- 添加思考状态提示 -->
+        <div x-show="aiState.thinking" class="text-left">
+          <div class="inline-block rounded-xl px-3 py-2 bg-slate-100 dark:bg-slate-800">
+            <div class="flex items-center gap-2">
+              <div class="animate-pulse">AI 思考中</div>
+              <div class="animate-bounce">...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 修改发送按钮 -->
+      <div class="flex gap-2">
+        <input class="input flex-1" placeholder="向 AI 提问（为空则解释当前单词）" 
+          x-model="aiState.input" 
+          @keyup.enter="sendAI()"
+          :disabled="aiState.thinking">
+        <button class="px-6 py-2 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+          @click="sendAI()" 
+          :disabled="aiState.thinking">
+          发送
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+  <script src="ai.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+    }
+  </script>
+</body>
+</html>

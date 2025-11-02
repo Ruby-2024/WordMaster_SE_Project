@@ -1,0 +1,10 @@
+{
+  "name": "Vocab Lite",
+  "short_name": "VocabLite",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0ea5e9",
+  "theme_color": "#0ea5e9",
+  "lang": "zh-CN",
+  "description": "最小化技术栈的背单词 Web App（GitHub Pages + LocalStorage + PWA）"
+}
