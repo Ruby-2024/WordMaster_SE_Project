@@ -4,7 +4,8 @@ const STORAGE = {
   settings: 'vl.settings',
   decks: 'vl.decks',
   cards: 'vl.cards',
-  stats: 'vl.stats'
+  stats: 'vl.stats',
+  pvp: 'vl.pvp' // 新增排位赛存储键
 };
 
 // 默认设置
@@ -16,6 +17,16 @@ const DEFAULT_SETTINGS = {
     defaultReviewMode: 'spelling'
   },
   daily: { newPerDay: 10, ratio: 0.5 },
+  rank: {
+    levels: [
+      { name: '秀才', vls: 0 },
+      { name: '举人', vls: 50 },
+      { name: '进士', vls: 200 },
+      { name: '翰林', vls: 500 },
+      { name: '大学士', vls: 1000 },
+      { name: '状元', vls: 2000 }
+    ]
+  },
   ai: {
     base: 'https://api.deepseek.com/v1',  // 直接使用 DeepSeek API
     model: 'deepseek-chat',
@@ -110,15 +121,127 @@ function buildQueue(allCards, settings, statsToday) {
   };
 }
 
-function loadStats() {
-  let s = LS.get(STORAGE.stats, { date: todayStr(), learned: 0, reviewed: 0, streak: 0 });
+// 官阶机制：根据 VLS 获取官阶名称
+function getRank(vls, settings) {
+  const levels = settings.rank.levels.sort((a, b) => b.vls - a.vls);
+  for (const level of levels) {
+    if (vls >= level.vls) return level.name;
+  }
+  return levels[levels.length - 1].name;
+}
+
+// 官阶机制：计算 VLS (Vocabulary Level Score)
+function calculateVLS(cards) {
+  let vls = 0;
+  for (const card of Object.values(cards)) {
+    // VLS = sum(box_i)
+    if (card.box && card.box > 0) {
+      vls += card.box;
+    }
+  }
+  return vls;
+}
+
+function loadStats(cards, settings) {
+  let s = LS.get(STORAGE.stats, { date: todayStr(), learned: 0, reviewed: 0, streak: 0, vls: 0, rank: '秀才', pvp: { level: '青铜', stars: 1, wins: 0, losses: 0 } });  // 每日统计重置
   if (s.date !== todayStr()) {
-    s = { date: todayStr(), learned: 0, reviewed: 0, streak: (s.learned||s.reviewed) ? (s.streak+1) : s.streak };
+    s = { 
+      date: todayStr(), 
+      learned: 0, 
+      reviewed: 0, 
+      streak: (s.learned||s.reviewed) ? (s.streak+1) : s.streak,
+      vls: s.vls, // 保持 VLS
+      rank: s.rank, // 保持官阶
+      pvp: s.pvp // 保持排位赛状态
+    };
+    LS.set(STORAGE.stats, s);
+  }
+  
+  // 确保 VLS 和 Rank 存在 (兼容旧数据)
+  if (s.vls === undefined || s.rank === undefined) {
+    s.vls = calculateVLS(cards);
+    s.rank = getRank(s.vls, settings);
+    LS.set(STORAGE.stats, s);
+  }
+  
+  // 确保 pvp 存在 (兼容旧数据)
+  if (s.pvp === undefined) {
+    s.pvp = { level: '青铜', stars: 1, wins: 0, losses: 0 };
     LS.set(STORAGE.stats, s);
   }
   return s;
 }
 function saveStats(s) { LS.set(STORAGE.stats, s); }
+
+// 排位赛机制：更新等级和星级
+function updatePVP(pvp, isWin) {
+  const levels = ['青铜', '白银', '黄金', '铂金', '钻石', '王者'];
+  let currentLevelIndex = levels.indexOf(pvp.level);
+  let currentStars = pvp.stars;
+
+  if (isWin) {
+    pvp.wins++;
+    currentStars++;
+    if (currentLevelIndex < 5 && currentStars > 3) { // 非王者，星级满3升一级
+      currentLevelIndex++;
+      currentStars = 1;
+    } else if (currentLevelIndex === 5 && currentStars > 1) { // 王者，星级满1不再升
+      currentStars = 1;
+    }
+  } else {
+    pvp.losses++;
+    if (currentLevelIndex === 5) { // 王者，输了不掉星
+      currentStars = 1;
+    } else if (currentLevelIndex > 0) { // 非青铜，输了掉星
+      currentStars--;
+      if (currentStars < 1) { // 星级掉光降一级
+        currentLevelIndex--;
+        currentStars = 3;
+      }
+    } else { // 青铜，输了不掉星
+      currentStars = 1;
+    }
+  }
+
+  pvp.level = levels[currentLevelIndex];
+  pvp.stars = currentStars;
+  return pvp;
+}
+
+// 排位赛机制：生成挑战任务
+function generateChallenge(cards, count = 10) {
+  const learnedCards = Object.values(cards).filter(c => c.box && c.box > 0);
+  if (learnedCards.length < count) {
+    return { error: `至少需要掌握 ${count} 个单词才能开始排位赛。` };
+  }
+  
+  // 随机抽取 count 个单词
+  const shuffled = learnedCards.sort(() => 0.5 - Math.random());
+  const challengeWords = shuffled.slice(0, count);
+  
+  return { words: challengeWords, count };
+}
+
+// 排位赛机制：生成虚拟对手得分 (基于用户当前等级)
+function generateOpponentScore(pvp) {
+  const levels = ['青铜', '白银', '黄金', '铂金', '钻石', '王者'];
+  const levelIndex = levels.indexOf(pvp.level);
+  
+  // 基础分 (0-1000)
+  let baseScore = 500 + levelIndex * 100 + (pvp.stars - 1) * 30;
+  
+  // 随机浮动 (-50 到 +50)
+  const randomOffset = Math.floor(Math.random() * 101) - 50;
+  
+  return Math.max(100, baseScore + randomOffset);
+}
+
+// 排位赛机制：判定挑战结果
+function resolvePVP(pvp, userScore, opponentScore) {
+  const isWin = userScore > opponentScore;
+  const newPVP = updatePVP(pvp, isWin);
+  return { isWin, newPVP, opponentScore };
+}
 
 function deckProgress(cards, deck) {
   const prefix = `[${deck.id}]`;
@@ -159,7 +282,18 @@ document.addEventListener('alpine:init', () => {
     spellingFeedback: '',
 
     // 统计
-    statsToday: loadStats(),
+    statsToday: null, // 延迟加载，需要 cards 和 settings
+    rankLevels: [], // 官阶等级列表
+    
+    // 排位赛状态
+    pvpChallenge: null, // 当前挑战任务
+    pvpOpponentScore: 0, // 虚拟对手得分
+    pvpStartTime: 0, // 挑战开始时间
+    pvpResult: null, // 挑战结果
+    pvpInput: '', // 排位赛拼写输入
+    pvpFeedback: '', // 排位赛反馈
+    pvpCurrentIndex: 0, // 当前挑战单词索引
+    pvpCorrectCount: 0, // 正确单词数
 
     // AI
     aiState: { messages: [], input: '', thinking: false },
@@ -182,13 +316,111 @@ document.addEventListener('alpine:init', () => {
       const decksLS = LS.get(STORAGE.decks, this.decks);
       this.decks = decksLS.length ? decksLS : this.decks;
       this.cards = LS.get(STORAGE.cards, this.cards);
+      
+      // 加载统计数据 (需要 cards 和 settings)
+      this.statsToday = loadStats(this.cards, this.settings);
+      this.rankLevels = this.settings.rank.levels; // 确保 rankLevels 被初始化
 
       // 默认页&模式
       this.tab = this.settings.study.defaultTab || 'home';
+      
+      // 确保 tab 存在
+      if (!['home', 'study', 'review', 'pvp'].includes(this.tab)) {
+        this.tab = 'home';
+      }
       this.modeStudy = this.settings.study.defaultStudyMode || 'memory';
       this.modeReview = this.settings.study.defaultReviewMode || 'spelling';
 
       this.refreshQueues();
+    },
+
+    // ----------------------------------------------------------------
+    // 排位赛逻辑
+    // ----------------------------------------------------------------
+    startPVP() {
+      const challenge = generateChallenge(this.cards);
+      if (challenge.error) {
+        alert(challenge.error);
+        return;
+      }
+      
+      this.pvpChallenge = challenge;
+      this.pvpOpponentScore = generateOpponentScore(this.statsToday.pvp);
+      this.pvpStartTime = Date.now();
+      this.pvpResult = null;
+      this.pvpInput = '';
+      this.pvpFeedback = '';
+      this.pvpCurrentIndex = 0;
+      this.pvpCorrectCount = 0;
+      this.tab = 'pvp';
+      
+      // 聚焦输入框
+      setTimeout(() => {
+        const input = document.querySelector('input[x-model="pvpInput"]');
+        if (input) input.focus();
+      }, 100);
+    },
+    
+    checkPVPSpelling() {
+      if (!this.pvpChallenge) return;
+      
+      const currentWord = this.pvpChallenge.words[this.pvpCurrentIndex];
+      const guess = (this.pvpInput || '').trim().toLowerCase();
+      const ans = currentWord.word.trim().toLowerCase();
+      
+      if (!guess) return;
+      
+      const dist = levenshtein(guess, ans);
+      const maxDist = Math.ceil(ans.length * 0.2);
+      const ok = dist <= maxDist && guess.length === ans.length;
+      
+      if (ok) {
+        this.pvpCorrectCount++;
+        this.pvpFeedback = `✅ 正确: ${currentWord.word}`;
+      } else {
+        this.pvpFeedback = `❌ 错误。正确拼写: ${currentWord.word}`;
+      }
+      
+      this.pvpInput = '';
+      this.pvpCurrentIndex++;
+      
+      if (this.pvpCurrentIndex >= this.pvpChallenge.count) {
+        this.endPVP();
+      } else {
+        // 聚焦输入框
+        setTimeout(() => {
+          const input = document.querySelector('input[x-model="pvpInput"]');
+          if (input) input.focus();
+        }, 100);
+      }
+    },
+    
+    endPVP() {
+      const timeTaken = (Date.now() - this.pvpStartTime) / 1000; // 秒
+      const totalWords = this.pvpChallenge.count;
+      const correctRate = this.pvpCorrectCount / totalWords;
+      
+      // 挑战得分计算：正确率 * 1000 - 用时 (秒)
+      const userScore = Math.floor(correctRate * 1000 - timeTaken);
+      
+      const result = resolvePVP(this.statsToday.pvp, userScore, this.pvpOpponentScore);
+      this.statsToday.pvp = result.newPVP;
+      saveStats(this.statsToday);
+      
+      this.pvpResult = {
+        userScore,
+        opponentScore: result.opponentScore,
+        isWin: result.isWin,
+        timeTaken: timeTaken.toFixed(1),
+        correctCount: this.pvpCorrectCount,
+        totalWords: totalWords,
+        oldLevel: this.statsToday.pvp.level,
+        oldStars: this.statsToday.pvp.stars,
+        newLevel: result.newPVP.level,
+        newStars: result.newPVP.stars
+      };
+      
+      this.pvpChallenge = null; // 结束挑战
     },
 
     async loadBuiltins() {
@@ -317,6 +549,8 @@ document.addEventListener('alpine:init', () => {
       if (this.lastGrade) {
         const beforeBox = this.currentCard.box;
         updateLeitner(this.currentCard, this.lastGrade);
+        
+        // 1. 更新统计数据
         if (!this.currentCard._countedToday) {
           if (!beforeBox) this.statsToday.learned++;
           else this.statsToday.reviewed++;
@@ -324,6 +558,11 @@ document.addEventListener('alpine:init', () => {
         } else {
           this.statsToday.reviewed++;
         }
+        
+        // 2. 更新 VLS 和官阶
+        this.statsToday.vls = calculateVLS(this.cards);
+        this.statsToday.rank = getRank(this.statsToday.vls, this.settings);
+        
         saveStats(this.statsToday);
         this.cards[this.currentCard.word.toLowerCase()] = this.currentCard;
         LS.set(STORAGE.cards, this.cards);
@@ -378,6 +617,18 @@ document.addEventListener('alpine:init', () => {
         } else {
           this.statsToday.reviewed++;
         }
+        // 1. 更新统计数据
+        if (!this.currentCard._countedToday) {
+          this.statsToday.learned++;
+          this.currentCard._countedToday = true;
+        } else {
+          this.statsToday.reviewed++;
+        }
+        
+        // 2. 更新 VLS 和官阶
+        this.statsToday.vls = calculateVLS(this.cards);
+        this.statsToday.rank = getRank(this.statsToday.vls, this.settings);
+        
         saveStats(this.statsToday);
         this.cards[this.currentCard.word.toLowerCase()] = this.currentCard;
         LS.set(STORAGE.cards, this.cards);
@@ -392,7 +643,14 @@ document.addEventListener('alpine:init', () => {
     gradeReview(score) {
       if (!this.reviewCard) return;
       updateLeitner(this.reviewCard, score);
+      
+      // 1. 更新统计数据
       this.statsToday.reviewed++;
+      
+      // 2. 更新 VLS 和官阶
+      this.statsToday.vls = calculateVLS(this.cards);
+      this.statsToday.rank = getRank(this.statsToday.vls, this.settings);
+      
       saveStats(this.statsToday);
       this.cards[this.reviewCard.word.toLowerCase()] = this.reviewCard;
       LS.set(STORAGE.cards, this.cards);

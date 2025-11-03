@@ -80,6 +80,9 @@
           :class="tab==='review' && 'text-sky-600'" 
           @click="tab='review'">复习</button>
         <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
+          :class="tab==='pvp' && 'text-sky-600'" 
+          @click="tab='pvp'">排位赛</button>
+        <button class="px-3 py-1.5 transition-colors hover:text-sky-600" 
           :class="tab==='settings' && 'text-sky-600'" 
           @click="tab='settings'">设置</button>
       </nav>
@@ -91,6 +94,36 @@
 
     <!-- 首页：说明 -->
     <section x-show="tab==='home'" x-cloak class="space-y-4">
+      <!-- 官阶信息 -->
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3 leading-relaxed">
+        <h2 class="text-2xl font-semibold">我的官阶</h2>
+        <p class="text-4xl font-bold text-primary" x-text="statsToday.rank"></p>
+        <p class="text-sm text-gray-500">词汇水平值 (VLS): <span x-text="statsToday.vls"></span></p>
+        <div class="mt-4">
+          <h3 class="text-lg font-semibold">官阶等级</h3>
+          <ul class="list-disc list-inside ml-4">
+            <template x-for="level in rankLevels" :key="level.name">
+              <li :class="{'font-bold text-success': statsToday.rank === level.name}">
+                <span x-text="level.name"></span> (VLS ≥ <span x-text="level.vls"></span>)
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+      
+      <!-- 排位赛信息 -->
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3 leading-relaxed">
+        <h2 class="text-2xl font-semibold">排位赛</h2>
+        <p class="text-4xl font-bold text-secondary" x-text="statsToday.pvp.level"></p>
+        <p class="text-xl">星级: <span x-text="'★'.repeat(statsToday.pvp.stars) + '☆'.repeat(3 - statsToday.pvp.stars)"></span></p>
+        <p class="text-sm text-gray-500">胜/负: <span x-text="statsToday.pvp.wins"></span> / <span x-text="statsToday.pvp.losses"></span></p>
+        <div class="flex gap-2 mt-4">
+          <button class="btn-primary" @click="tab='pvp'">前往排位赛</button>
+        </div>
+      </div>
+      
+      <h2 class="text-2xl font-semibold">欢迎使用 Vocab Lite</h2>
+      <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3 leading-relaxed">
       <h2 class="text-2xl font-semibold">欢迎使用 Vocab Lite</h2>
       <div class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-3 leading-relaxed">
         <p>这是一个<strong>零打包、纯静态</strong>的背单词 App：Alpine.js + Tailwind CDN，数据存浏览器 LocalStorage，支持 PWA 离线。</p>
@@ -269,6 +302,67 @@
         </label>
         <button class="px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white transition-colors md:col-span-2" 
           @click="saveSettings()">保存</button>
+      </div>
+    </section>
+
+    <!-- 排位赛页 -->
+    <section x-show="tab==='pvp'" x-cloak class="space-y-4">
+      <h2 class="text-xl font-semibold">排位赛</h2>
+      
+      <!-- 初始状态/结果页 -->
+      <div x-show="!pvpChallenge" class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-4 text-center">
+        <div x-show="!pvpResult">
+          <p class="text-xl">当前等级: <span class="font-bold text-secondary" x-text="statsToday.pvp.level"></span> <span x-text="'★'.repeat(statsToday.pvp.stars) + '☆'.repeat(3 - statsToday.pvp.stars)"></span></p>
+          <p class="text-sm text-gray-500">胜/负: <span x-text="statsToday.pvp.wins"></span> / <span x-text="statsToday.pvp.losses"></span></p>
+          <button class="btn-primary btn-lg mt-4" @click="startPVP">开始排位赛</button>
+        </div>
+        
+        <!-- 挑战结果 -->
+        <div x-show="pvpResult" class="space-y-3">
+          <h3 class="text-3xl font-bold" :class="pvpResult.isWin ? 'text-success' : 'text-error'" x-text="pvpResult.isWin ? '🎉 挑战胜利!' : '😭 挑战失败!'"></h3>
+          <p class="text-xl">你的得分: <span class="font-bold" x-text="pvpResult.userScore"></span></p>
+          <p class="text-xl">对手得分: <span class="font-bold" x-text="pvpResult.opponentScore"></span></p>
+          
+          <div class="divider">挑战详情</div>
+          <p>正确率: <span x-text="pvpResult.correctCount"></span> / <span x-text="pvpResult.totalWords"></span></p>
+          <p>用时: <span x-text="pvpResult.timeTaken"></span> 秒</p>
+          
+          <div class="divider">等级变化</div>
+          <p>
+            <span x-text="pvpResult.oldLevel"></span> <span x-text="'★'.repeat(pvpResult.oldStars) + '☆'.repeat(3 - pvpResult.oldStars)"></span>
+            <span class="mx-2">→</span>
+            <span x-text="pvpResult.newLevel"></span> <span x-text="'★'.repeat(pvpResult.newStars) + '☆'.repeat(3 - pvpResult.newStars)"></span>
+          </p>
+          
+          <div class="flex justify-center gap-4 mt-4">
+            <button class="btn" @click="pvpResult = null; tab = 'home'">返回首页</button>
+            <button class="btn-primary" @click="startPVP">再来一局</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 挑战进行中 -->
+      <div x-show="pvpChallenge" class="rounded-xl border p-4 bg-white/70 dark:bg-slate-800/70 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xl font-semibold">排位赛进行中</h3>
+          <span class="text-lg font-mono text-error">
+            <span x-text="pvpCurrentIndex + 1"></span> / <span x-text="pvpChallenge.count"></span>
+          </span>
+        </div>
+        
+        <div class="text-center my-8">
+          <p class="text-xl text-gray-500">请拼写以下单词的中文释义对应的英文单词:</p>
+          <p class="text-4xl font-bold text-primary mt-2" x-text="pvpChallenge.words[pvpCurrentIndex].meaning"></p>
+        </div>
+        
+        <form @submit.prevent="checkPVPSpelling" class="flex flex-col space-y-4">
+          <input type="text" placeholder="输入英文单词" 
+            class="input w-full text-lg py-3 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-sky-500 dark:focus:border-sky-500 focus:ring-1 focus:ring-sky-500" 
+            x-model="pvpInput" required>
+          <button type="submit" class="btn-primary">提交</button>
+        </form>
+        
+        <p x-show="pvpFeedback" class="mt-4 text-center" :class="pvpFeedback.startsWith('✅') ? 'text-success' : 'text-error'" x-text="pvpFeedback"></p>
       </div>
     </section>
 
